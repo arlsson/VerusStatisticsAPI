@@ -1,3 +1,5 @@
+import logging
+
 from functions.send_request import send_request
 from var.vars import RPCURL, VARRRRPCURL, VDEXRPCURL
 from var.dict import COINGECKO_GETCURRENCYCONVERTERS_CURRENCY_FORMATS
@@ -8,6 +10,12 @@ from functions.extractiaddress import extract_i_address
 from functions.getallbaskets import getallbaskets
 import time
 from functions.reserves import dai_reserves
+
+from src.utils import cache
+
+
+logger = logging.getLogger("uvicorn.app") 
+
 
 def get_currencyconverters(basket_name):
     networkblocks = latest_block()
@@ -141,7 +149,11 @@ def calculate_currency_prices(currencies, reserves, weights, known_currency, kno
     return prices
 
 
+@cache(10 * 60)
 def get_currencyconvertersdata():
+
+    logger.info(f"getting fresh get_currencyconvertersdata")
+
     currency_one = ["DAI", "MKR"]
     currency_two = ["SUPERNET", "VRSC", "TBTC", "ETH", "ARRR", "DEX", "CHIPS", "scrvUSD"]
     weights = [0.25, 0.25]
@@ -256,50 +268,50 @@ def get_currencyconvertersdata():
         currency_price_data = {currency: price for currency, price in final_currency_prices.items()}
     else:
         currency_price_data = None
-
+    
     return currency_price_data, total_reserves
 
-_cached_prices = None
-_cached_reserves = None
-_cached_time = None
 
 def calculate_liquidity(base_currency, target_currency):
-    global _cached_prices, _cached_reserves, _cached_time
-    CACHE_TIMEOUT = 10 * 60  # 5 minutes
-    current_time = time.time()
+    """
+    Args:
+        base_currency (str): Symbol/Currency code/Contract Address of a the base cryptoasset, eg. BTC.
+        target_currency (str): Symbol/Currency code/Contract Address of the target cryptoasset, eg. ETH.
+
+    Returns:
+        tuple:
+            - liquidity_in_usd (decimal): Pool liquidity in USD, (base_reserve * base_currency_price) + (target_reserve * target_currency_price),
+            - base_currency_price (int): price for base_currency.
+            - target_currency_price (str): price for target_currency.
+    """
+    
     currency_exclusions = ["Bridge.vETH", "Bridge.CHIPS", "Bridge.vARRR", "Bridge.vDEX"]
     stablecoins = ["USDT", "USDC"]
-    if base_currency in currency_exclusions or target_currency in currency_exclusions:
+    
+    is_base_or_target_excluded = base_currency in currency_exclusions or target_currency in currency_exclusions
+    if is_base_or_target_excluded:
         return 0.0
 
     # Replace tBTC with TBTC in currency names
     base_currency = base_currency.replace("tBTC", "TBTC")
     target_currency = target_currency.replace("tBTC", "TBTC")
-    if _cached_prices is not None and _cached_reserves is not None and _cached_time is not None and (current_time - _cached_time < CACHE_TIMEOUT):
-        prices = _cached_prices
-        reserves = _cached_reserves
-        base_currency_price = 1.0 if base_currency in stablecoins else prices.get(base_currency, 0.0)
-        target_currency_price = 1.0 if target_currency in stablecoins else prices.get(target_currency, 0.0)
-        base_currency_reserve = reserves.get(base_currency, 0.0)
-        target_currency_reserve = reserves.get(target_currency, 0.0)
-        #print(base_currency_price, target_currency_price)
 
-        # Calculate the values
-        base_currency_value =  base_currency_reserve * base_currency_price
-        target_currency_value = target_currency_reserve * target_currency_price
 
-        # print(f"Base currency value: {base_currency_value}")
-        # print(f"Target currency value: {target_currency_value}")
+    prices, reserves = get_currencyconvertersdata()
 
-        # Find the smaller value and multiply it by 2
-        smallest_value = min(base_currency_value, target_currency_value)
-        result = smallest_value * 2
+    # prices are in USD
+    base_currency_price = 1.0 if base_currency in stablecoins else prices.get(base_currency, 0.0)
+    target_currency_price = 1.0 if target_currency in stablecoins else prices.get(target_currency, 0.0)
 
-        #print(f"Smallest value multiplied by 2: {result}")
-        return result, base_currency_price, target_currency_price
-    else:
-        print("Fetching new data...")
-        currency_price_data, reserves_new = get_currencyconvertersdata()
-        _cached_prices = currency_price_data
-        _cached_reserves = reserves_new
-        _cached_time = current_time
+    # get the reserves
+    base_currency_reserve   = reserves.get(base_currency, 0.0)
+    target_currency_reserve = reserves.get(target_currency, 0.0)
+
+
+    # Calculate the values
+    base_currency_value   =  base_currency_reserve * base_currency_price
+    target_currency_value = target_currency_reserve * target_currency_price
+
+    liquidity_in_usd = base_currency_value + target_currency_value
+
+    return liquidity_in_usd, base_currency_price, target_currency_price

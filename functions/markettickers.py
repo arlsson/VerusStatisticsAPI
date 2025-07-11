@@ -436,9 +436,36 @@ def getmarkettickers(baskets, volblock, latestblock, ticker_infovrsc, ticker_inf
     return final_ticker_infovrsc, final_ticker_infodai, final_ticker_infoeth, final_ticker_infomkr, final_ticker_infotbtc
 
 
+
+
+
 def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_infodai, ticker_infoeth, ticker_infomkr, ticker_infotbtc):
-    
+
+
+    def remove_veth_suffix_and_v_prefix_from_currency_names(currency, convertto):
+        """
+        Remove '.vETH' suffix and 'v' prefix from currency names in a currency pair.
+
+        Parameters:
+        - currency (str): The name of the first currency in the pair.
+        - convertto (str): The name of the second currency in the pair.
+
+        Returns:
+        - tuple: A tuple of two strings (currency, convertto) with '.vETH' suffix and 'v' prefix removed,
+                 unless the currency is exactly 'Bridge.vETH' or 'NATI.vETH', in which case it remains unchanged.
+        """
+        def clean(name):
+            if name in ("Bridge.vETH", "NATI.vETH"):
+                return name
+            return name.replace(".vETH", "").lstrip('v')
+
+        cleaned_currency = clean(currency)
+        cleaned_convertto = clean(convertto)
+
+        return currency, convertto
+
     for basket in baskets:
+
         volume_info, currencyvolume = getcurrencyvolumeinfo(basket, volblock, latestblock, 1440, "VRSC")
 
         if volume_info is None:
@@ -447,57 +474,52 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
         basket_addr_vrsc = get_currencyid_by_ticker(basket)
 
         for pair in volume_info:
-                # Remove .vETH suffix and 'v' prefix from currency names
-                if pair['currency'] == "Bridge.vETH" or pair['convertto'] == "Bridge.vETH":
-                    currency = pair['currency']
-                    convertto = pair['convertto']
-                elif pair['currency'] == "NATI.vETH" or pair['convertto'] == "NATI.vETH":
-                    currency = pair['currency']
-                    convertto = pair['convertto']
-                else:
-                    currency = pair['currency'].replace(".vETH", "").lstrip('v')
-                    convertto = pair['convertto'].replace(".vETH", "").lstrip('v')
-                if currency == "VRSC" or convertto == "VRSC":
-                    # Reverse currency and convertto in the pair
-                    if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
-                        currency_pair = f"Bridge.vETH_VRSC" if currency == "Bridge.vETH" else f"{convertto}_VRSC"
-                    else:
-                        currency_pair = f"{convertto}_{currency}"
-                    # Calculate weights based on volume
-                    weights = pair['volume'] / np.sum(pair['volume'])
-                    # Invert values if VRSC is the quote currency (second position)
-                    if convertto == "VRSC":
-                        volume = pair['volume']
-                        last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                        high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                        low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                        openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-                    else:
-                        volume = pair['volume']
-                        last = np.dot(weights, pair['close']) / np.sum(weights)
-                        high = np.dot(weights, pair['high']) / np.sum(weights)
-                        low = np.dot(weights, pair['low']) / np.sum(weights)
-                        openn = np.dot(weights, pair['open']) / np.sum(weights)
-                    base_currency, target_currency = currency_pair.split("_")
-                    try:
-                        liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
-                    except TypeError:
-                        liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                        print(f"Error: Could not calculate liquidity for {currency_pair}.")
-                    ticker_infovrsc.append({
-                        'ticker_id': currency_pair,
-                        'base_currency': base_currency,
-                        'target_currency': target_currency,                   
-                        'pool_id': basket_addr_vrsc,
-                        'volume': volume,
-                        'base_volume': volume * base_currency_price,
-                        'target_volume': volume * target_currency_price,
-                        'liquidity_in_usd': liquidity_value,
-                        'last_price': last,
-                        'high': high,
-                        'low': low,
-                        'open': openn
-                    })
+
+            currency, convertto = remove_veth_suffix_and_v_prefix_from_currency_names(pair['currency'], pair['convertto'])
+
+            if currency != "VRSC" and convertto != "VRSC":
+                continue
+
+            # Reverse currency and convertto in the pair
+            if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
+                currency_pair = f"Bridge.vETH_VRSC" if currency == "Bridge.vETH" else f"{convertto}_VRSC"
+            else:
+                currency_pair = f"{convertto}_{currency}"
+            # Calculate weights based on volume
+            weights = pair['volume'] / np.sum(pair['volume'])
+            # Invert values if VRSC is the quote currency (second position)
+            if convertto == "VRSC":
+                volume = pair['volume']
+                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
+                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
+                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
+                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
+            else:
+                volume = pair['volume']
+                last = np.dot(weights, pair['close']) / np.sum(weights)
+                high = np.dot(weights, pair['high']) / np.sum(weights)
+                low = np.dot(weights, pair['low']) / np.sum(weights)
+                openn = np.dot(weights, pair['open']) / np.sum(weights)
+            base_currency, target_currency = currency_pair.split("_")
+            try:
+                liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
+            except TypeError:
+                liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
+                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+            ticker_infovrsc.append({
+                'ticker_id': currency_pair,
+                'base_currency': base_currency,
+                'target_currency': target_currency,                   
+                'pool_id': basket_addr_vrsc,
+                'volume': volume,
+                'base_volume': volume * base_currency_price,
+                'target_volume': volume * target_currency_price,
+                'liquidity_in_usd': liquidity_value,
+                'last_price': last,
+                'high': high,
+                'low': low,
+                'open': openn
+            })
 
 
     # Combine reverse pairs
@@ -542,56 +564,51 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
         basket_addr_dai = get_currencyid_by_ticker(basket)
 
         for pair in daivolume_info:
-            # Remove .vETH suffix and 'v' prefix from currency names
-            if pair['currency'] == "Bridge.vETH" or pair['convertto'] == "Bridge.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
-            elif pair['currency'] == "NATI.vETH" or pair['convertto'] == "NATI.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
+
+            currency, convertto = remove_veth_suffix_and_v_prefix_from_currency_names(pair['currency'], pair['convertto'])
+
+            if currency != "DAI" and convertto != "DAI":
+                continue
+        
+            # Reverse currency and convertto in the pair
+            if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
+                currency_pair = f"Bridge.vETH_DAI" if currency == "Bridge.vETH" else f"{convertto}_DAI"
             else:
-                currency = pair['currency'].replace(".vETH", "").lstrip('v')
-                convertto = pair['convertto'].replace(".vETH", "").lstrip('v')
-            if currency == "DAI" or convertto == "DAI":
-                # Reverse currency and convertto in the pair
-                if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
-                    currency_pair = f"Bridge.vETH_DAI" if currency == "Bridge.vETH" else f"{convertto}_DAI"
-                else:
-                    currency_pair = f"{convertto}_{currency}"
-                weights = pair['volume'] / np.sum(pair['volume'])
-                # Invert values if VRSC is the quote currency (second position)
-                if convertto == "DAI":
-                    volume = pair['volume']
-                    last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                    high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                    low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-                else:
-                    volume = pair['volume']
-                    last = np.dot(weights, pair['close']) / np.sum(weights)
-                    high = np.dot(weights, pair['high']) / np.sum(weights)
-                    low = np.dot(weights, pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, pair['open']) / np.sum(weights)
-                base_currency, target_currency = currency_pair.split("_")
-                try:
-                    liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
-                except TypeError:
-                    liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                    print(f"Error: Could not calculate liquidity for {currency_pair}.")
-                ticker_infodai.append({
-                    'ticker_id': currency_pair,
-                    'base_currency': base_currency,
-                    'target_currency': target_currency,
-                    'pool_id': basket_addr_dai,
-                    'volume': volume,
-                    'base_volume': volume * base_currency_price,
-                    'target_volume': volume * target_currency_price,
-                    'liquidity_in_usd': liquidity_value,
-                    'last_price': last,
-                    'high': high,
-                    'low': low,
-                    'open': openn
-                })
+                currency_pair = f"{convertto}_{currency}"
+            weights = pair['volume'] / np.sum(pair['volume'])
+            # Invert values if VRSC is the quote currency (second position)
+            if convertto == "DAI":
+                volume = pair['volume']
+                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
+                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
+                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
+                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
+            else:
+                volume = pair['volume']
+                last = np.dot(weights, pair['close']) / np.sum(weights)
+                high = np.dot(weights, pair['high']) / np.sum(weights)
+                low = np.dot(weights, pair['low']) / np.sum(weights)
+                openn = np.dot(weights, pair['open']) / np.sum(weights)
+            base_currency, target_currency = currency_pair.split("_")
+            try:
+                liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
+            except TypeError:
+                liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
+                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+            ticker_infodai.append({
+                'ticker_id': currency_pair,
+                'base_currency': base_currency,
+                'target_currency': target_currency,
+                'pool_id': basket_addr_dai,
+                'volume': volume,
+                'base_volume': volume * base_currency_price,
+                'target_volume': volume * target_currency_price,
+                'liquidity_in_usd': liquidity_value,
+                'last_price': last,
+                'high': high,
+                'low': low,
+                'open': openn
+            })
 
 
     # Combine reverse pairs
@@ -636,56 +653,51 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
         basket_addr_eth = get_currencyid_by_ticker(basket)
 
         for pair in ethvolume_info:
-            # Remove .vETH suffix and 'v' prefix from currency names
-            if pair['currency'] == "Bridge.vETH" or pair['convertto'] == "Bridge.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
-            elif pair['currency'] == "NATI.vETH" or pair['convertto'] == "NATI.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
+
+            currency, convertto = remove_veth_suffix_and_v_prefix_from_currency_names(pair['currency'], pair['convertto'])
+
+            if currency != "ETH" and convertto != "ETH":
+                continue
+
+            # Reverse currency and convertto in the pair
+            if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
+                currency_pair = f"Bridge.vETH_ETH" if currency == "Bridge.vETH" else f"{convertto}_ETH"
             else:
-                currency = pair['currency'].replace(".vETH", "").lstrip('v')
-                convertto = pair['convertto'].replace(".vETH", "").lstrip('v')
-            if currency == "ETH" or convertto == "ETH":
-                # Reverse currency and convertto in the pair
-                if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
-                    currency_pair = f"Bridge.vETH_ETH" if currency == "Bridge.vETH" else f"{convertto}_ETH"
-                else:
-                    currency_pair = f"{convertto}_{currency}"
-                weights = pair['volume'] / np.sum(pair['volume'])
-                # Invert values if VRSC is the quote currency (second position)
-                if convertto == "ETH":
-                    volume = pair['volume']
-                    last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                    high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                    low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-                else:
-                    volume = pair['volume']
-                    last = np.dot(weights, pair['close']) / np.sum(weights)
-                    high = np.dot(weights, pair['high']) / np.sum(weights)
-                    low = np.dot(weights, pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, pair['open']) / np.sum(weights)
-                base_currency, target_currency = currency_pair.split("_")
-                try:
-                    liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
-                except TypeError:
-                    liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                    print(f"Error: Could not calculate liquidity for {currency_pair}.")
-                ticker_infoeth.append({
-                    'ticker_id': currency_pair,
-                    'base_currency': base_currency,
-                    'target_currency': target_currency,
-                    'pool_id': basket_addr_eth,
-                    'volume': volume,
-                    'base_volume': volume * base_currency_price,
-                    'target_volume': volume * target_currency_price,
-                    'liquidity_in_usd': liquidity_value,
-                    'last_price': last,
-                    'high': high,
-                    'low': low,
-                    'open': openn
-                })
+                currency_pair = f"{convertto}_{currency}"
+            weights = pair['volume'] / np.sum(pair['volume'])
+            # Invert values if VRSC is the quote currency (second position)
+            if convertto == "ETH":
+                volume = pair['volume']
+                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
+                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
+                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
+                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
+            else:
+                volume = pair['volume']
+                last = np.dot(weights, pair['close']) / np.sum(weights)
+                high = np.dot(weights, pair['high']) / np.sum(weights)
+                low = np.dot(weights, pair['low']) / np.sum(weights)
+                openn = np.dot(weights, pair['open']) / np.sum(weights)
+            base_currency, target_currency = currency_pair.split("_")
+            try:
+                liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
+            except TypeError:
+                liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
+                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+            ticker_infoeth.append({
+                'ticker_id': currency_pair,
+                'base_currency': base_currency,
+                'target_currency': target_currency,
+                'pool_id': basket_addr_eth,
+                'volume': volume,
+                'base_volume': volume * base_currency_price,
+                'target_volume': volume * target_currency_price,
+                'liquidity_in_usd': liquidity_value,
+                'last_price': last,
+                'high': high,
+                'low': low,
+                'open': openn
+            })
 
 
     # Combine reverse pairs
@@ -730,56 +742,51 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
         basket_addr_mkr = get_currencyid_by_ticker(basket)
 
         for pair in mkrvolume_info:
-            # Remove .vETH suffix and 'v' prefix from currency names
-            if pair['currency'] == "Bridge.vETH" or pair['convertto'] == "Bridge.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
-            elif pair['currency'] == "NATI.vETH" or pair['convertto'] == "NATI.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
+
+            currency, convertto = remove_veth_suffix_and_v_prefix_from_currency_names(pair['currency'], pair['convertto'])
+
+            if currency != "MKR" and convertto != "MKR":
+                continue
+            
+            # Reverse currency and convertto in the pair
+            if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
+                currency_pair = f"Bridge.vETH_MKR" if currency == "Bridge.vETH" else f"{convertto}_MKR"
             else:
-                currency = pair['currency'].replace(".vETH", "").lstrip('v')
-                convertto = pair['convertto'].replace(".vETH", "").lstrip('v')
-            if currency == "MKR" or convertto == "MKR":
-                # Reverse currency and convertto in the pair
-                if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
-                    currency_pair = f"Bridge.vETH_MKR" if currency == "Bridge.vETH" else f"{convertto}_MKR"
-                else:
-                    currency_pair = f"{convertto}_{currency}"
-                weights = pair['volume'] / np.sum(pair['volume'])
-                # Invert values if VRSC is the quote currency (second position)
-                if convertto == "MKR":
-                    volume = pair['volume']
-                    last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                    high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                    low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-                else:
-                    volume = pair['volume']
-                    last = np.dot(weights, pair['close']) / np.sum(weights)
-                    high = np.dot(weights, pair['high']) / np.sum(weights)
-                    low = np.dot(weights, pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, pair['open']) / np.sum(weights)
-                base_currency, target_currency = currency_pair.split("_")
-                try:
-                    liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
-                except TypeError:
-                    liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                    print(f"Error: Could not calculate liquidity for {currency_pair}.")
-                ticker_infomkr.append({
-                    'ticker_id': currency_pair,
-                    'base_currency': base_currency,
-                    'target_currency': target_currency,
-                    'pool_id': basket_addr_mkr,
-                    'volume': volume,
-                    'base_volume': volume * base_currency_price,
-                    'target_volume': volume * target_currency_price,
-                    'liquidity_in_usd': liquidity_value,
-                    'last_price': last,
-                    'high': high,
-                    'low': low,
-                    'open': openn
-                })
+                currency_pair = f"{convertto}_{currency}"
+            weights = pair['volume'] / np.sum(pair['volume'])
+            # Invert values if VRSC is the quote currency (second position)
+            if convertto == "MKR":
+                volume = pair['volume']
+                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
+                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
+                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
+                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
+            else:
+                volume = pair['volume']
+                last = np.dot(weights, pair['close']) / np.sum(weights)
+                high = np.dot(weights, pair['high']) / np.sum(weights)
+                low = np.dot(weights, pair['low']) / np.sum(weights)
+                openn = np.dot(weights, pair['open']) / np.sum(weights)
+            base_currency, target_currency = currency_pair.split("_")
+            try:
+                liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
+            except TypeError:
+                liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
+                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+            ticker_infomkr.append({
+                'ticker_id': currency_pair,
+                'base_currency': base_currency,
+                'target_currency': target_currency,
+                'pool_id': basket_addr_mkr,
+                'volume': volume,
+                'base_volume': volume * base_currency_price,
+                'target_volume': volume * target_currency_price,
+                'liquidity_in_usd': liquidity_value,
+                'last_price': last,
+                'high': high,
+                'low': low,
+                'open': openn
+            })
 
 
     # Combine reverse pairs
@@ -824,62 +831,57 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
         basket_addr_tbtc = get_currencyid_by_ticker(basket)
 
         for pair in tbtcvolume_info:
-            # Remove .vETH suffix and 'v' prefix from currency names
-            if pair['currency'] == "Bridge.vETH" or pair['convertto'] == "Bridge.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
-            elif pair['currency'] == "NATI.vETH" or pair['convertto'] == "NATI.vETH":
-                currency = pair['currency']
-                convertto = pair['convertto']
+
+            currency, convertto = remove_veth_suffix_and_v_prefix_from_currency_names(pair['currency'], pair['convertto'])
+
+            if currency.lower() == "tbtc":
+                currency = "TBTC"
+
+            if convertto.lower() == "tbtc":
+                convertto = "TBTC"
+
+            if currency != "TBTC" and convertto != "TBTC":
+                continue
+
+            # Reverse currency and convertto in the pair
+            if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
+                currency_pair = f"Bridge.vETH_TBTC" if currency == "Bridge.vETH" else f"{convertto}_TBTC"
             else:
-                currency = pair['currency'].replace(".vETH", "").lstrip('v')
-                convertto = pair['convertto'].replace(".vETH", "").lstrip('v')
-
-                if currency.lower() == "tbtc":
-                    currency = "TBTC"
-                if convertto.lower() == "tbtc":
-                    convertto = "TBTC"
-
-            if currency == "TBTC" or convertto == "TBTC":
-                # Reverse currency and convertto in the pair
-                if currency == "Bridge.vETH" or convertto == "Bridge.vETH":
-                    currency_pair = f"Bridge.vETH_TBTC" if currency == "Bridge.vETH" else f"{convertto}_TBTC"
-                else:
-                    currency_pair = f"{convertto}_{currency}"
-                weights = pair['volume'] / np.sum(pair['volume'])
-                # Invert values if VRSC is the quote currency (second position)
-                if convertto == "TBTC":
-                    volume = pair['volume']
-                    last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                    high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                    low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-                else:
-                    volume = pair['volume']
-                    last = np.dot(weights, pair['close']) / np.sum(weights)
-                    high = np.dot(weights, pair['high']) / np.sum(weights)
-                    low = np.dot(weights, pair['low']) / np.sum(weights)
-                    openn = np.dot(weights, pair['open']) / np.sum(weights)
-                base_currency, target_currency = currency_pair.split("_")
-                try:
-                    liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
-                except TypeError:
-                    liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                    print(f"Error: Could not calculate liquidity for {currency_pair}.")
-                ticker_infotbtc.append({
-                    'ticker_id': currency_pair,
-                    'base_currency': base_currency,
-                    'target_currency': target_currency,
-                    'pool_id': basket_addr_tbtc,
-                    'volume': volume,
-                    'base_volume': volume * base_currency_price,
-                    'target_volume': volume * target_currency_price,
-                    'liquidity_in_usd': liquidity_value,
-                    'last_price': last,
-                    'high': high,
-                    'low': low,
-                    'open': openn
-                })
+                currency_pair = f"{convertto}_{currency}"
+            weights = pair['volume'] / np.sum(pair['volume'])
+            # Invert values if VRSC is the quote currency (second position)
+            if convertto == "TBTC":
+                volume = pair['volume']
+                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
+                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
+                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
+                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
+            else:
+                volume = pair['volume']
+                last = np.dot(weights, pair['close']) / np.sum(weights)
+                high = np.dot(weights, pair['high']) / np.sum(weights)
+                low = np.dot(weights, pair['low']) / np.sum(weights)
+                openn = np.dot(weights, pair['open']) / np.sum(weights)
+            base_currency, target_currency = currency_pair.split("_")
+            try:
+                liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
+            except TypeError:
+                liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
+                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+            ticker_infotbtc.append({
+                'ticker_id': currency_pair,
+                'base_currency': base_currency,
+                'target_currency': target_currency,
+                'pool_id': basket_addr_tbtc,
+                'volume': volume,
+                'base_volume': volume * base_currency_price,
+                'target_volume': volume * target_currency_price,
+                'liquidity_in_usd': liquidity_value,
+                'last_price': last,
+                'high': high,
+                'low': low,
+                'open': openn
+            })
 
 
     # Combine reverse pairs

@@ -100,30 +100,28 @@ def cache(seconds, max_stale = None, memcached_client = None):
 
 
             if client:
-                raw = client.get(key)
-                if raw:
-                    value, ts = pickle.loads(raw)
-                    age = now - ts
-                    cache[key] = value
-                    timestamps[key] = ts
-
-                    if age < seconds:
-                        return value
-
-                    if max_stale is None or age < max_stale:
-                        
-                        if not update_locks[key].locked():
-                            threading.Thread(target = refresh, args=(func, args, kwargs, key), daemon = True).start()
-                        
-                        return value
                 try:
-                    pass
+                    raw = client.get(key)
+                    if raw:
+                        value, ts = pickle.loads(raw)
+                        age = now - ts
+                        cache[key] = value
+                        timestamps[key] = ts
+
+                        if age < seconds:
+                            return value
+
+                        if max_stale is None or age < max_stale:
+                            
+                            if not update_locks[key].locked():
+                                threading.Thread(target = refresh, args=(func, args, kwargs, key), daemon = True).start()
+                            
+                            return value
 
                 except Exception as e:
                     logger.error(f"cache, wrapped error: {e}")
 
             # wait for results if no cache is available
-            print(f"{func.__module__}.{func.__qualname__} not in cache")
             result = func(*args, **kwargs)
             store(key, result)
             return result
@@ -147,7 +145,7 @@ def cache(seconds, max_stale = None, memcached_client = None):
 
             if not client:
                 return
-            print("memcache update here")
+
             try:
                 client.set(key, pickle.dumps((result, now)), expire=int(max_stale or 60*60*24))
             except Exception as e:

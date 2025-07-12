@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pylibmc
+
+dotenv
+requests
+numpy
+yfinance
+web3
+
+pymemcache

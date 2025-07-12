@@ -14,7 +14,7 @@ from functions.reserves import dai_reserves
 from src.utils import cache
 
 
-logger = logging.getLogger("uvicorn.app") 
+logger = logging.getLogger("uvicorn.error") 
 
 
 def get_currencyconverters(basket_name):

@@ -1,0 +1,40 @@
+version: "3.8"
+
+networks:
+  nginx-proxy-manager_default:
+    external: true
+    driver: bridge
+
+services:
+  vsapi-gecko:
+    container_name: vsapi-gecko
+    build:
+      context: ../
+      dockerfile: docker-gecko/Dockerfile
+
+    environment:
+      MEMCACHE_HOST: vsapi-gecko-memcache
+      MEMCACHE_PORT: 11211
+
+      WEB_CONCURRENCY: 1
+
+      VIRTUAL_HOST: vsapi-gecko.hs.mittmoln.se
+
+      FORWARDED_ALLOW_IPS: "*"
+
+    networks:
+      - nginx-proxy-manager_default
+    
+    ports:
+      - "5000:5000"
+
+    depends_on:
+      - vsapi-gecko-memcache
+
+  vsapi-gecko-memcache:
+    container_name: vsapi-gecko-memcache
+    image: memcached:alpine
+    ports:
+      - "11211:11211"
+    networks:
+      - nginx-proxy-manager_default

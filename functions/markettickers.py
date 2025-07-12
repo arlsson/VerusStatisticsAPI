@@ -4,6 +4,8 @@ from functions.tickerfunc import get_currencyid_by_ticker
 from functions.getcurrencyconverters import calculate_liquidity
 import requests
 
+from src.utils import cache
+
 def get_crypto_price(symbol):
     """
     Fetches the USD price of a cryptocurrency using its ticker symbol via the CoinGecko API.
@@ -438,7 +440,7 @@ def getmarkettickers(baskets, volblock, latestblock, ticker_infovrsc, ticker_inf
 
 
 
-
+@cache(60)
 def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_infodai, ticker_infoeth, ticker_infomkr, ticker_infotbtc):
 
 

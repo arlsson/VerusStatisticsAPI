@@ -514,6 +514,73 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
         return openn, high, low, last
 
 
+    def combine_reverse_pairs(ticker_info):
+        """
+        Combines ticker data for reverse trading pairs by aggregating their volume and computing
+        weighted averages of price data (open, high, low, last_price).
+
+        For example, if a pair "BTC-VRSC" and its reverse "VRSC-BTC" are present, they will be
+        merged into a single entry. Reverse pairs are identified by reversing the symbol string
+        separated by a dash (e.g., "BTC-VRSC" ↔ "VRSC-BTC").
+
+        The aggregation is volume-weighted:
+        - Volumes are summed.
+        - Prices (open, high, low, last_price) are averaged using the volume as weights.
+        - For reverse pairs, 'high' and 'low' are swapped before averaging to maintain price consistency.
+
+        Parameters
+        ----------
+        ticker_info : list of dict
+            A list where each dictionary contains ticker data for a trading pair.
+            Each dict is expected to have the following keys:
+            - 'ticker_id' (str): The pair symbol, e.g., "BTC-VRSC"
+            - 'volume' (float): Trade volume
+            - 'last_price' (float)
+            - 'high' (float)
+            - 'low' (float)
+            - 'open' (float)
+
+        Returns
+        -------
+        dict
+            A dictionary of combined ticker information with reverse pairs merged into unified entries.
+            Keys are the unified pair symbols (as strings), values are dictionaries containing
+            the aggregated volume and weighted price information.
+        """
+        combined_ticker_info = {}
+        for ticker in ticker_info:
+            symbol = ticker['ticker_id']
+            reverse_symbol = "-".join(symbol.split("-")[::-1])
+            if symbol in combined_ticker_info:
+                combined_volume = combined_ticker_info[symbol]['volume'] + ticker['volume']
+                combined_weights = np.array([combined_ticker_info[symbol]['volume'], ticker['volume']]) / combined_volume
+                combined_ticker_info[symbol]['volume'] = combined_volume
+                combined_ticker_info[symbol]['last_price'] = np.dot(
+                    [combined_ticker_info[symbol]['last_price'], ticker['last_price']], combined_weights)
+                combined_ticker_info[symbol]['high'] = np.dot(
+                    [combined_ticker_info[symbol]['high'], ticker['high']], combined_weights)
+                combined_ticker_info[symbol]['low'] = np.dot(
+                    [combined_ticker_info[symbol]['low'], ticker['low']], combined_weights)
+                combined_ticker_info[symbol]['open'] = np.dot(
+                    [combined_ticker_info[symbol]['open'], ticker['open']], combined_weights)
+            elif reverse_symbol in combined_ticker_info:
+                combined_volume = combined_ticker_info[reverse_symbol]['volume'] + ticker['volume']
+                combined_weights = np.array([combined_ticker_info[reverse_symbol]['volume'], ticker['volume']]) / combined_volume
+                combined_ticker_info[reverse_symbol]['volume'] = combined_volume
+                combined_ticker_info[reverse_symbol]['last_price'] = np.dot(
+                    [combined_ticker_info[reverse_symbol]['last_price'], ticker['last_price']], combined_weights)
+                combined_ticker_info[reverse_symbol]['high'] = np.dot(
+                    [combined_ticker_info[reverse_symbol]['high'], ticker['low']], combined_weights)
+                combined_ticker_info[reverse_symbol]['low'] = np.dot(
+                    [combined_ticker_info[reverse_symbol]['low'], ticker['high']], combined_weights)
+                combined_ticker_info[reverse_symbol]['open'] = np.dot(
+                    [combined_ticker_info[reverse_symbol]['open'], ticker['open']], combined_weights)
+            else:
+                combined_ticker_info[symbol] = ticker
+
+        return combined_ticker_info
+
+
     for basket in baskets:
 
         volume_info, currencyvolume = getcurrencyvolumeinfo(basket, volblock, latestblock, 1440, "VRSC")
@@ -554,7 +621,7 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
             ticker_infovrsc.append({
                 'ticker_id': currency_pair,
                 'base_currency': base_currency,
-                'target_currency': target_currency,                   
+                'target_currency': target_currency,
                 'pool_id': basket_addr_vrsc,
                 'volume': volume,
                 'base_volume': volume * base_currency_price,
@@ -566,38 +633,7 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 'open': openn
             })
 
-
-    # Combine reverse pairs
-    combined_ticker_infovrsc = {}
-    for ticker in ticker_infovrsc:
-        symbol = ticker['ticker_id']
-        reverse_symbol = "-".join(symbol.split("-")[::-1])
-        if symbol in combined_ticker_infovrsc:
-            combined_volume = combined_ticker_infovrsc[symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infovrsc[symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infovrsc[symbol]['volume'] = combined_volume
-            combined_ticker_infovrsc[symbol]['last_price'] = np.dot(
-                [combined_ticker_infovrsc[symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infovrsc[symbol]['high'] = np.dot(
-                [combined_ticker_infovrsc[symbol]['high'], ticker['high']], combined_weights)
-            combined_ticker_infovrsc[symbol]['low'] = np.dot(
-                [combined_ticker_infovrsc[symbol]['low'], ticker['low']], combined_weights)
-            combined_ticker_infovrsc[symbol]['open'] = np.dot(
-                [combined_ticker_infovrsc[symbol]['open'], ticker['open']], combined_weights)
-        elif reverse_symbol in combined_ticker_infovrsc:
-            combined_volume = combined_ticker_infovrsc[reverse_symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infovrsc[reverse_symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infovrsc[reverse_symbol]['volume'] = combined_volume
-            combined_ticker_infovrsc[reverse_symbol]['last_price'] = np.dot(
-                [combined_ticker_infovrsc[reverse_symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infovrsc[reverse_symbol]['high'] = np.dot(
-                [combined_ticker_infovrsc[reverse_symbol]['high'], ticker['low']], combined_weights)
-            combined_ticker_infovrsc[reverse_symbol]['low'] = np.dot(
-                [combined_ticker_infovrsc[reverse_symbol]['low'], ticker['high']], combined_weights)
-            combined_ticker_infovrsc[reverse_symbol]['open'] = np.dot(
-                [combined_ticker_infovrsc[reverse_symbol]['open'], ticker['open']], combined_weights)
-        else:
-            combined_ticker_infovrsc[symbol] = ticker
+    combined_ticker_infovrsc = combine_reverse_pairs(ticker_infovrsc)
 
 
     for basket in baskets:
@@ -651,38 +687,7 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 'open': openn
             })
 
-
-    # Combine reverse pairs
-    combined_ticker_infodai = {}
-    for ticker in ticker_infodai:
-        symbol = ticker['ticker_id']
-        reverse_symbol = "-".join(symbol.split("-")[::-1])
-        if symbol in combined_ticker_infodai:
-            combined_volume = combined_ticker_infodai[symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infodai[symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infodai[symbol]['volume'] = combined_volume
-            combined_ticker_infodai[symbol]['last_price'] = np.dot(
-                [combined_ticker_infodai[symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infodai[symbol]['high'] = np.dot(
-                [combined_ticker_infodai[symbol]['high'], ticker['high']], combined_weights)
-            combined_ticker_infodai[symbol]['low'] = np.dot(
-                [combined_ticker_infodai[symbol]['low'], ticker['low']], combined_weights)
-            combined_ticker_infodai[symbol]['open'] = np.dot(
-                [combined_ticker_infodai[symbol]['open'], ticker['open']], combined_weights)
-        elif reverse_symbol in combined_ticker_infodai:
-            combined_volume = combined_ticker_infodai[reverse_symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infodai[reverse_symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infodai[reverse_symbol]['volume'] = combined_volume
-            combined_ticker_infodai[reverse_symbol]['last_price'] = np.dot(
-                [combined_ticker_infodai[reverse_symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infodai[reverse_symbol]['high'] = np.dot(
-                [combined_ticker_infodai[reverse_symbol]['high'], ticker['low']], combined_weights)
-            combined_ticker_infodai[reverse_symbol]['low'] = np.dot(
-                [combined_ticker_infodai[reverse_symbol]['low'], ticker['high']], combined_weights)
-            combined_ticker_infodai[reverse_symbol]['open'] = np.dot(
-                [combined_ticker_infodai[reverse_symbol]['open'], ticker['open']], combined_weights)
-        else:
-            combined_ticker_infodai[symbol] = ticker
+    combined_ticker_infodai = combine_reverse_pairs(ticker_infodai)
 
 
     for basket in baskets:
@@ -735,38 +740,7 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 'open': openn
             })
 
-
-    # Combine reverse pairs
-    combined_ticker_infoeth = {}
-    for ticker in ticker_infoeth:
-        symbol = ticker['ticker_id']
-        reverse_symbol = "-".join(symbol.split("-")[::-1])
-        if symbol in combined_ticker_infoeth:
-            combined_volume = combined_ticker_infoeth[symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infoeth[symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infoeth[symbol]['volume'] = combined_volume
-            combined_ticker_infoeth[symbol]['last_price'] = np.dot(
-                [combined_ticker_infoeth[symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infoeth[symbol]['high'] = np.dot(
-                [combined_ticker_infoeth[symbol]['high'], ticker['high']], combined_weights)
-            combined_ticker_infoeth[symbol]['low'] = np.dot(
-                [combined_ticker_infoeth[symbol]['low'], ticker['low']], combined_weights)
-            combined_ticker_infoeth[symbol]['open'] = np.dot(
-                [combined_ticker_infoeth[symbol]['open'], ticker['open']], combined_weights)
-        elif reverse_symbol in combined_ticker_infoeth:
-            combined_volume = combined_ticker_infoeth[reverse_symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infoeth[reverse_symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infoeth[reverse_symbol]['volume'] = combined_volume
-            combined_ticker_infoeth[reverse_symbol]['last_price'] = np.dot(
-                [combined_ticker_infoeth[reverse_symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infoeth[reverse_symbol]['high'] = np.dot(
-                [combined_ticker_infoeth[reverse_symbol]['high'], ticker['low']], combined_weights)
-            combined_ticker_infoeth[reverse_symbol]['low'] = np.dot(
-                [combined_ticker_infoeth[reverse_symbol]['low'], ticker['high']], combined_weights)
-            combined_ticker_infoeth[reverse_symbol]['open'] = np.dot(
-                [combined_ticker_infoeth[reverse_symbol]['open'], ticker['open']], combined_weights)
-        else:
-            combined_ticker_infoeth[symbol] = ticker
+    combined_ticker_infoeth = combine_reverse_pairs(ticker_infoeth)
 
 
     for basket in baskets:
@@ -819,38 +793,7 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 'open': openn
             })
 
-
-    # Combine reverse pairs
-    combined_ticker_infomkr = {}
-    for ticker in ticker_infomkr:
-        symbol = ticker['ticker_id']
-        reverse_symbol = "-".join(symbol.split("-")[::-1])
-        if symbol in combined_ticker_infomkr:
-            combined_volume = combined_ticker_infomkr[symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infomkr[symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infomkr[symbol]['volume'] = combined_volume
-            combined_ticker_infomkr[symbol]['last_price'] = np.dot(
-                [combined_ticker_infomkr[symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infomkr[symbol]['high'] = np.dot(
-                [combined_ticker_infomkr[symbol]['high'], ticker['high']], combined_weights)
-            combined_ticker_infomkr[symbol]['low'] = np.dot(
-                [combined_ticker_infomkr[symbol]['low'], ticker['low']], combined_weights)
-            combined_ticker_infomkr[symbol]['open'] = np.dot(
-                [combined_ticker_infomkr[symbol]['open'], ticker['open']], combined_weights)
-        elif reverse_symbol in combined_ticker_infomkr:
-            combined_volume = combined_ticker_infomkr[reverse_symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infomkr[reverse_symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infomkr[reverse_symbol]['volume'] = combined_volume
-            combined_ticker_infomkr[reverse_symbol]['last_price'] = np.dot(
-                [combined_ticker_infomkr[reverse_symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infomkr[reverse_symbol]['high'] = np.dot(
-                [combined_ticker_infomkr[reverse_symbol]['high'], ticker['low']], combined_weights)
-            combined_ticker_infomkr[reverse_symbol]['low'] = np.dot(
-                [combined_ticker_infomkr[reverse_symbol]['low'], ticker['high']], combined_weights)
-            combined_ticker_infomkr[reverse_symbol]['open'] = np.dot(
-                [combined_ticker_infomkr[reverse_symbol]['open'], ticker['open']], combined_weights)
-        else:
-            combined_ticker_infomkr[symbol] = ticker
+    combined_ticker_infomkr = combine_reverse_pairs(ticker_infomkr)
 
 
     for basket in baskets:
@@ -909,38 +852,7 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 'open': openn
             })
 
-
-    # Combine reverse pairs
-    combined_ticker_infotbtc = {}
-    for ticker in ticker_infotbtc:
-        symbol = ticker['ticker_id']
-        reverse_symbol = "-".join(symbol.split("-")[::-1])
-        if symbol in combined_ticker_infotbtc:
-            combined_volume = combined_ticker_infotbtc[symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infotbtc[symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infotbtc[symbol]['volume'] = combined_volume
-            combined_ticker_infotbtc[symbol]['last_price'] = np.dot(
-                [combined_ticker_infotbtc[symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infotbtc[symbol]['high'] = np.dot(
-                [combined_ticker_infotbtc[symbol]['high'], ticker['high']], combined_weights)
-            combined_ticker_infotbtc[symbol]['low'] = np.dot(
-                [combined_ticker_infotbtc[symbol]['low'], ticker['low']], combined_weights)
-            combined_ticker_infotbtc[symbol]['open'] = np.dot(
-                [combined_ticker_infotbtc[symbol]['open'], ticker['open']], combined_weights)
-        elif reverse_symbol in combined_ticker_infotbtc:
-            combined_volume = combined_ticker_infotbtc[reverse_symbol]['volume'] + ticker['volume']
-            combined_weights = np.array([combined_ticker_infotbtc[reverse_symbol]['volume'], ticker['volume']]) / combined_volume
-            combined_ticker_infotbtc[reverse_symbol]['volume'] = combined_volume
-            combined_ticker_infotbtc[reverse_symbol]['last_price'] = np.dot(
-                [combined_ticker_infotbtc[reverse_symbol]['last_price'], ticker['last_price']], combined_weights)
-            combined_ticker_infotbtc[reverse_symbol]['high'] = np.dot(
-                [combined_ticker_infotbtc[reverse_symbol]['high'], ticker['low']], combined_weights)
-            combined_ticker_infotbtc[reverse_symbol]['low'] = np.dot(
-                [combined_ticker_infotbtc[reverse_symbol]['low'], ticker['high']], combined_weights)
-            combined_ticker_infotbtc[reverse_symbol]['open'] = np.dot(
-                [combined_ticker_infotbtc[reverse_symbol]['open'], ticker['open']], combined_weights)
-        else:
-            combined_ticker_infotbtc[symbol] = ticker
+    combined_ticker_infotbtc = combine_reverse_pairs(ticker_infotbtc)
 
 
     final_ticker_infovrsc = list(combined_ticker_infovrsc.values())

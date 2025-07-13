@@ -3,8 +3,11 @@ from functions.getvolinfo import getcurrencyvolumeinfo
 from functions.tickerfunc import get_currencyid_by_ticker
 from functions.getcurrencyconverters import calculate_liquidity
 import requests
+import logging
 
 from src.utils import cache
+
+logger = logging.getLogger(__name__)
 
 def get_crypto_price(symbol):
     """
@@ -466,6 +469,51 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
 
         return currency, convertto
 
+
+    def ohlc_invert_values_if_base_currency(is_base_currency, pair, weights):
+        """
+        Computes the weighted average of OHLC (Open, High, Low, Close) values for a currency pair,
+        optionally inverting the values if the base currency is the pricing side.
+
+        If `is_base_currency` is True, the OHLC values are inverted (i.e., 1/value) before
+        computing the weighted averages. This is commonly used when the base currency is the quote
+        in a trading pair, requiring inverse pricing.
+
+        Parameters:
+        ----------
+        is_base_currency : bool
+            Flag indicating whether the base currency is the pricing currency and inversion is needed.
+        pair : dict
+            A dictionary containing OHLC values as NumPy arrays for the pair. Expected keys:
+            'open', 'high', 'low', 'close'.
+        weights : np.ndarray
+            A NumPy array of weights to apply to the OHLC values. Must be the same length as the OHLC arrays.
+
+        Returns:
+        -------
+        last : float
+            Weighted average of the (possibly inverted) close prices.
+        high : float
+            Weighted average of the (possibly inverted) high prices.
+        low : float
+            Weighted average of the (possibly inverted) low prices.
+        openn : float
+            Weighted average of the (possibly inverted) open prices.
+        """
+        if is_base_currency:
+            openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
+            high  = np.dot(weights, 1 / pair['high']) / np.sum(weights)
+            low   = np.dot(weights, 1 / pair['low']) / np.sum(weights)
+            last  = np.dot(weights, 1 / pair['close']) / np.sum(weights)
+        else:
+            openn = np.dot(weights, pair['open']) / np.sum(weights)
+            high  = np.dot(weights, pair['high']) / np.sum(weights)
+            low   = np.dot(weights, pair['low']) / np.sum(weights)
+            last  = np.dot(weights, pair['close']) / np.sum(weights)
+
+        return openn, high, low, last
+
+
     for basket in baskets:
 
         volume_info, currencyvolume = getcurrencyvolumeinfo(basket, volblock, latestblock, 1440, "VRSC")
@@ -487,27 +535,22 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 currency_pair = f"Bridge.vETH_VRSC" if currency == "Bridge.vETH" else f"{convertto}_VRSC"
             else:
                 currency_pair = f"{convertto}_{currency}"
-            # Calculate weights based on volume
-            weights = pair['volume'] / np.sum(pair['volume'])
-            # Invert values if VRSC is the quote currency (second position)
-            if convertto == "VRSC":
-                volume = pair['volume']
-                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-            else:
-                volume = pair['volume']
-                last = np.dot(weights, pair['close']) / np.sum(weights)
-                high = np.dot(weights, pair['high']) / np.sum(weights)
-                low = np.dot(weights, pair['low']) / np.sum(weights)
-                openn = np.dot(weights, pair['open']) / np.sum(weights)
+
             base_currency, target_currency = currency_pair.split("_")
+
+            weights = pair['volume'] / np.sum(pair['volume'])
+
+            volume = pair['volume']
+
+            # Invert values if VRSC is the quote currency (second position)
+            openn, high, low, last  = ohlc_invert_values_if_base_currency(base_currency == "VRSC", pair, weights)
+
             try:
                 liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
             except TypeError:
                 liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+                logger.error(f"Error: Could not calculate liquidity for {currency_pair}.")
+
             ticker_infovrsc.append({
                 'ticker_id': currency_pair,
                 'base_currency': base_currency,
@@ -577,26 +620,22 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 currency_pair = f"Bridge.vETH_DAI" if currency == "Bridge.vETH" else f"{convertto}_DAI"
             else:
                 currency_pair = f"{convertto}_{currency}"
-            weights = pair['volume'] / np.sum(pair['volume'])
-            # Invert values if VRSC is the quote currency (second position)
-            if convertto == "DAI":
-                volume = pair['volume']
-                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-            else:
-                volume = pair['volume']
-                last = np.dot(weights, pair['close']) / np.sum(weights)
-                high = np.dot(weights, pair['high']) / np.sum(weights)
-                low = np.dot(weights, pair['low']) / np.sum(weights)
-                openn = np.dot(weights, pair['open']) / np.sum(weights)
+
             base_currency, target_currency = currency_pair.split("_")
+            
+            weights = pair['volume'] / np.sum(pair['volume'])
+
+            volume = pair['volume']
+
+            # Invert values if DAI is the quote currency (second position)
+            openn, high, low, last  = ohlc_invert_values_if_base_currency(base_currency == "DAI", pair, weights)
+
             try:
                 liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
             except TypeError:
                 liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+                logger.error(f"Error: Could not calculate liquidity for {currency_pair}.")
+            
             ticker_infodai.append({
                 'ticker_id': currency_pair,
                 'base_currency': base_currency,
@@ -666,26 +705,21 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 currency_pair = f"Bridge.vETH_ETH" if currency == "Bridge.vETH" else f"{convertto}_ETH"
             else:
                 currency_pair = f"{convertto}_{currency}"
-            weights = pair['volume'] / np.sum(pair['volume'])
-            # Invert values if VRSC is the quote currency (second position)
-            if convertto == "ETH":
-                volume = pair['volume']
-                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-            else:
-                volume = pair['volume']
-                last = np.dot(weights, pair['close']) / np.sum(weights)
-                high = np.dot(weights, pair['high']) / np.sum(weights)
-                low = np.dot(weights, pair['low']) / np.sum(weights)
-                openn = np.dot(weights, pair['open']) / np.sum(weights)
+
             base_currency, target_currency = currency_pair.split("_")
+
+            weights = pair['volume'] / np.sum(pair['volume'])
+            
+            volume = pair['volume']
+
+            # Invert values if ETH is the quote currency (second position)
+            openn, high, low, last  = ohlc_invert_values_if_base_currency(base_currency == "ETH", pair, weights)
+
             try:
                 liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
             except TypeError:
                 liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+                logger.error(f"Error: Could not calculate liquidity for {currency_pair}.")
             ticker_infoeth.append({
                 'ticker_id': currency_pair,
                 'base_currency': base_currency,
@@ -755,26 +789,21 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 currency_pair = f"Bridge.vETH_MKR" if currency == "Bridge.vETH" else f"{convertto}_MKR"
             else:
                 currency_pair = f"{convertto}_{currency}"
-            weights = pair['volume'] / np.sum(pair['volume'])
-            # Invert values if VRSC is the quote currency (second position)
-            if convertto == "MKR":
-                volume = pair['volume']
-                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-            else:
-                volume = pair['volume']
-                last = np.dot(weights, pair['close']) / np.sum(weights)
-                high = np.dot(weights, pair['high']) / np.sum(weights)
-                low = np.dot(weights, pair['low']) / np.sum(weights)
-                openn = np.dot(weights, pair['open']) / np.sum(weights)
+
             base_currency, target_currency = currency_pair.split("_")
+
+            weights = pair['volume'] / np.sum(pair['volume'])
+            
+            volume = pair['volume']
+            
+            # Invert values if MKR is the quote currency (second position)
+            openn, high, low, last  = ohlc_invert_values_if_base_currency(base_currency == "MKR", pair, weights)
+            
             try:
                 liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
             except TypeError:
                 liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+                logger.error(f"Error: Could not calculate liquidity for {currency_pair}.")
             ticker_infomkr.append({
                 'ticker_id': currency_pair,
                 'base_currency': base_currency,
@@ -850,26 +879,21 @@ def getmarkettickersnew(baskets, volblock, latestblock, ticker_infovrsc, ticker_
                 currency_pair = f"Bridge.vETH_TBTC" if currency == "Bridge.vETH" else f"{convertto}_TBTC"
             else:
                 currency_pair = f"{convertto}_{currency}"
-            weights = pair['volume'] / np.sum(pair['volume'])
-            # Invert values if VRSC is the quote currency (second position)
-            if convertto == "TBTC":
-                volume = pair['volume']
-                last = np.dot(weights, 1 / pair['close']) / np.sum(weights)
-                high = np.dot(weights, 1 / pair['high']) / np.sum(weights)
-                low = np.dot(weights, 1 / pair['low']) / np.sum(weights)
-                openn = np.dot(weights, 1 / pair['open']) / np.sum(weights)
-            else:
-                volume = pair['volume']
-                last = np.dot(weights, pair['close']) / np.sum(weights)
-                high = np.dot(weights, pair['high']) / np.sum(weights)
-                low = np.dot(weights, pair['low']) / np.sum(weights)
-                openn = np.dot(weights, pair['open']) / np.sum(weights)
+            
             base_currency, target_currency = currency_pair.split("_")
+
+            weights = pair['volume'] / np.sum(pair['volume'])
+            
+            volume = pair['volume'] 
+
+            # Invert values if TBTC is the quote currency (second position)
+            openn, high, low, last  = ohlc_invert_values_if_base_currency(base_currency == "TBTC", pair, weights)
+
             try:
                 liquidity_value, base_currency_price, target_currency_price = calculate_liquidity(base_currency, target_currency)
             except TypeError:
                 liquidity_value, base_currency_price, target_currency_price = 0, 0, 0
-                print(f"Error: Could not calculate liquidity for {currency_pair}.")
+                logger.error(f"Error: Could not calculate liquidity for {currency_pair}.")
             ticker_infotbtc.append({
                 'ticker_id': currency_pair,
                 'base_currency': base_currency,
